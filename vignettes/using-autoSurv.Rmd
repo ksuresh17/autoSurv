@@ -1,0 +1,71 @@
+---
+title: "using-autoSurv"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{using-autoSurv}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## Do flow diagram for Debashis
+## Inputs, outputs, tune at each time point or just overall
+## Look at integrated brier score in Score function
+
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(autoSurv)
+```
+
+# Import Data
+
+```{r}
+data(pbc, package="survival")
+pbc$statusComp <- ifelse(pbc$status == 2, 1, 0)
+pbc$survTime <- pbc$time/365.25
+dat <- pbc[,c(1,5,7:22)]
+dat <- dat[complete.cases(dat),]
+
+
+# talk about imputation in preprocessing, or subset complete, or throw error if incomplete
+```
+
+# Fit Models
+
+```{r}
+results <- autoSurv(timeVar = "survTime", 
+                    statusVar = "statusComp", 
+                    idVar = "id",
+                    data = dat, 
+                    times = c(1,2,5), 
+                    testProp = 0.2, 
+                    seed = 1,
+                    init = 10,
+                    iter = 10)
+```
+
+# View AUC Performance
+
+```{r}
+## do paired model/times
+
+results$auc
+```
+
+# View Brier Score Performance
+
+```{r}
+results$brier
+```
+
+# View model
+
+```{r}
+results$models$bestRF
+```
