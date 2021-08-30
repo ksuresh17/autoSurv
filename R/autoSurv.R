@@ -301,7 +301,7 @@ createPredictData2 <- function(dataX, time){
     n.delta <- length(time)
     interval <- rep(1:n.delta, times=nrow(dataX))
 
-    long.data <- dataX[rep(seq_len(nrow(dataX)), n.delta), ]
+    long.data <- dataX[rep(seq_len(nrow(dataX)), each=n.delta), ]
     long.data <- cbind(long.data, interval)
     long.data$interval <- factor(long.data$interval)
     long.data <- as.data.frame(long.data)
@@ -312,12 +312,12 @@ createPredictData2 <- function(dataX, time){
 BinModel <- function(testDat, trainDat, timeVar = "survTime", eventVar = "statusComp", excludeVars = NULL, w, numInt=5, methods.lib=c("gbm","glm")) {
 
     if(!is.null(excludeVars)) {
-        testDat <- testDat[,-which(colnames(testDat) %in% eval(c("id","status","fold")))]
-        trainDat <- trainDat[,-which(colnames(trainDat) %in% eval(c("id","status","fold")))]
+        testDat2 <- testDat[,-which(colnames(testDat) %in% eval(c("id","status","fold")))]
+        trainDat2 <- trainDat[,-which(colnames(trainDat) %in% eval(c("id","status","fold")))]
     }
 
     #create person-time data set
-    ptData <- genPTdat(dat=trainDat, timeVar=timeVar, eventVar=eventVar, numInt=numInt, w=w)
+    ptData <- genPTdat(dat=trainDat2, timeVar=timeVar, eventVar=eventVar, numInt=numInt, w=w)
 
     df.X <- subset(ptData, select= -c(ID, time, event, delta.lower, delta.upper, N.delta))
     df.full <- subset(ptData, select= -c(ID, time, event, delta.lower, delta.upper))
@@ -332,15 +332,12 @@ BinModel <- function(testDat, trainDat, timeVar = "survTime", eventVar = "status
         modelGlm <- caret::train(N.delta ~ ., data=df.full, method="glm", na.action=na.omit, trControl=fitControl)
     }
 
-    #need some way to remove missing observations but then still tie back to an id number??
-    testDat <- testDat[complete.cases(testDat), ]
-
-    ids.test <- 1:nrow(testDat)
+    ids.test <- 1:nrow(testDat2)
     delta.bound <- sort(unique(ptData["delta.lower"][ptData["delta.lower"]!=0] ))
     nhor <- length(delta.bound)
 
     ## Must put the data for prediction into the same format as we used to fit the model
-    testDat.pt <- createPredictData2(dataX = testDat, time=delta.bound)
+    testDat.pt <- createPredictData2(dataX = testDat2, time=delta.bound)
 
     #Get prediction for each of the models for conditional probabilities
     testDat.pred <- testDat.pt[1]
