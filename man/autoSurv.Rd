@@ -7,13 +7,16 @@
 autoSurv(
   timeVar,
   statusVar,
-  idVar,
   data,
-  times,
+  times = NULL,
+  trainModels = c("cox", "rsf", "glm", "gbm", "glmnet", "svm", "cforest", "nnet"),
+  bins = 10,
   testProp = 0.2,
   seed = 1,
   init = 10,
-  iter = 20
+  iter = 20,
+  cv = TRUE,
+  cvFold = 5
 )
 }
 \arguments{
@@ -21,11 +24,13 @@ autoSurv(
 
 \item{statusVar}{string corresponding to the variable name of the status indicator}
 
-\item{idVar}{string corresponding to the variable name of the unique identifiers of each observation}
-
 \item{data}{data frame containing covariates for prediction}
 
 \item{times}{vector of time points at which probably of event is predicted}
+
+\item{trainModels}{list of models to train. options: "cox","rsf","glm","gam","gbm","glmnet","svm","cforest","nnet"}
+
+\item{bins}{number of time bins}
 
 \item{testProp}{proportion of observations to be randomly selected for the test set}
 
@@ -34,6 +39,10 @@ autoSurv(
 \item{init}{number of randomly chosen points to sample the target function before Bayesian Optimization fitting the Gaussian Process}
 
 \item{iter}{total number of times the Bayesian Optimization is to be repeated}
+
+\item{cv}{enable or disable cross-validation}
+
+\item{cvFold}{number of folds to use in k-fold cross validation}
 }
 \value{
 

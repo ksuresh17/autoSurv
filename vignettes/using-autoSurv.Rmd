@@ -7,11 +7,6 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-## Do flow diagram for Debashis
-## Inputs, outputs, tune at each time point or just overall
-## Look at integrated brier score in Score function
-
-
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
@@ -20,52 +15,254 @@ knitr::opts_chunk$set(
 ```
 
 ```{r setup}
+library(devtools)
+load_all("/Users/krithikasuresh/OneDrive - The University of Colorado Denver/sureshk/Projects/Grants/ACSIRG_KS/DiscreteSurvivalPrediction/autoSurv-master")
+library(tidyverse)
 library(autoSurv)
 ```
 
-# Import Data
+# Introduction 
 
-```{r}
+Here, we describe the `autoSurv()` function developed to train and evaluate the performance of survival prediction models applied to time-to-event data. Currently, the function implements the continuous-time models Cox proportional hazards and random survival forests, and various classification models (logistic regression, elastic net, support vector machines, gradient boosting machines, neural network) in a discrete-time framework. This function implements the following steps: 
+
+* Model training: The training/test data split can be specified within the function. The training data set is used to build the models and to tune the hyperparameters. Additionally, the user can specify whether cross-validation in the training set should be used for hyperparameter tuning. 
+* Hyperparameter tuning: Machine learning algorithms often utilize hyperparameters in the model training process that must be tuned to identify the optimal values that will optimize predictive performance. Additionally, for the discrete-time models we tune the number of intervals used to create the person-time data set. Hyperparameter tuning is performed using Bayesian optimization. In the current function implementation, this step cannot be skipped with the aim that users can take advantage of the automated nature of this function to perform tuning. 
+
+* Model testing: The models built on the training data (using the tuned hyperparameters parameters) are applied to the test data and time-dependent performance metrics for right-censored data are reported. Specifically, we consider a measure of discrimination, area under the curve (AUC), and and overall performance measure, Brier score. 
+
+The resulting outputs from this function are: 
+* The trained models and tuned hyperparameters (these can be applied to external validation data sets to obtain predictions for new individuals)
+* The predictive performance metrics applied to the test data set (these can be used to identify the "best performing" model)
+
+## autoSurv() function
+
+The `autoSurv()` function requires the following parameters:
+
+* `timeVar`: string of the name of the column within the data set that denotes the time-to-event outcome.
+
+* `statusVar`: string of the name of the column within the data set that denotes the event indicator. Variable should be coded as 1 for event, 0 for censoring.
+
+* `data`: dataframe containing timeVar, statusVar, idVar, and other variables to be used in time-to-event prediction.
+
+* `times`: optional list of time horizon(s) of interest. If not specified, will be taken as the median of the event times. If specified as a single value, hyperparameter tuning optimizes predictive accuracy using Brier score at the specified time. If specified as a vector, hyperparameter tuning optimizes predictive accuracy using Integrated Brier score over the specified times. 
+
+Hyperparameter  prediction models will optimize predictive accuracy of the test data at these times. 
+
+* `bins.lower`: minimum number of discrete-time intervals used to build the discrete-time data set. Default is 5. 
+
+* `bins.upper`: maximum number of discrete-time intervals used to build the discrete-time data set. Default is 10. The number of intervals will be tuned as a hyperparameter and the range of possible values is [`bins.lower`, `bins.upper`].
+
+* `cens`: string indicating which method to use for handling censored observations. Options are:
+* "same" (censored observations are considered to be censored at the end of the same interval in which they were last observed)
+* "prev" (censored observations are considered to be censored at the end of the previous interval, mimicking observed discrete time data where they would have been last observed at the end of the previous interval)
+* "half" (censored observations are considered to be censored at the end of the same interval in which they were last observed if they were last observed at least half way through the interval)
+
+* `testProp`: proportion of samples to be separated into a test set. This is the data set on which the performance metrics are assessed. The reamining observations are used as the training set on which the model is built and hyperparameters are tuned. 
+
+* `seed`: integer value to set a random seed for reproducibility.
+
+* `init`: number of initialization points for hyperparameter optimization. Applies to all models trained. Choose a lower value to reduce computation time.
+
+* `iter`: number of iterations of hyperparameter optimization after initialization. Applies to all models trained. Choose a lower value to reduce computation time. 
+
+* `cv`: enable or disable cross-validation in the training data for the tuning of hyperparameters. If `cv=TRUE` the hyperparameters are tuned to optimize the cross-validated performance metrics. If `cv=FALSE` the hyperparameters are tuned to optimize the performance metrics computed in the test data set. 
+
+* `cvfold`: integer specifying the number of folds to use in k-fold cross-validation
+
+* `verbose.opt`: enable or disable printing of the Bayesian optimization progress
+
+# Example 1 - PBC 
+
+In this example, we demonstrate the performance of discrete-time survival models using the `pbc` data set from the `survival` package. We begin by formatting the data set for use in the analysis. The current implementation requires specification of a complete-case data set so missing observations are excluded. Alternatively, the user can use other functions to impute the missing observations to create a complete data set. Each row should correspond to a unique instance. 
+
+```{r pbc_Prep, cache=TRUE}
 data(pbc, package="survival")
 pbc$statusComp <- ifelse(pbc$status == 2, 1, 0)
 pbc$survTime <- pbc$time/365.25
-dat <- pbc[,c(1,5,7:22)]
-dat <- dat[complete.cases(dat),]
+pbc.dat <- pbc[,c(5,7:22)]
+pbc.dat <- pbc.dat[complete.cases(pbc.dat),]
 
-
-# talk about imputation in preprocessing, or subset complete, or throw error if incomplete
+#Standardize covariates
+pbc.dat_covs <- subset(pbc.dat, select = -c(statusComp,survTime))
+pbc.dat_covs_process <- caret::preProcess(pbc.dat_covs, method=c("center", "scale"))
+pbc.dat_covs <- predict(pbc.dat_covs_process, pbc.dat_covs)
+pbc.dat <- cbind(pbc.dat[,c("survTime","statusComp")], pbc.dat_covs)
 ```
 
-# Fit Models
+The resulting data set has `r nrow(pbc.dat)` individuals, with a median follow-up time of 6.7 years and a censoring rate of `r round(mean(1-pbc.dat$statusComp)*100)`%. 
 
-```{r}
-results <- autoSurv(timeVar = "survTime", 
-                    statusVar = "statusComp", 
-                    idVar = "id",
-                    data = dat, 
-                    times = c(1,2,5), 
-                    testProp = 0.2, 
-                    seed = 1,
-                    init = 10,
-                    iter = 10)
+## Fit survival models to PBC data
+
+The `pbc.dat` data set contains the survival time (labeled `survTime`), an event indicator (labeled `statusComp`), and 17 predictors.
+
+We use an 80/20 training/test split (`testProp=0.2`) and perform 5-fold (`cv=TRUE`, `cvFold=5`) cross-validation in the training data set to tune hyperparameters. 
+
+We specify the prediction time of interest as 3 years (`times=3`). We consider a maximum of 25 intervals (`bins.upper=25`) for creating the discrete-time data set. The optimal number of intervals will be tuned during cross-validation using Bayesian optimization. We specify that censored observations should be treated as being censored in the same interval in which they were last observed (`cens="same"`).
+
+The specification of the seed (`seed=1`) allows for these results to be reproduced. 
+
+The following models are fit (`trainModels`): 
+* Continuous-time: Cox proportional hazards (`cox`) and Random survival forest (`rsf`)
+* Discrete-time models: logistic regression (`glm`), elastic net (`glmnet`), gradient boosting machines (`gbm`), support vector machines (`svm`), and nueral networks (`nnet`)
+
+Some of these models require hyperparameters that are also tuned using Bayesian optimization. We use the default values for parameters related to the specifications of the Bayesian optimization search scheme (`init=10`, `iter=20`). Tuning is performed by minimizing the Brier score of the maximum of the prediction times specified (`times`) or by minimizing the integrated Brier score when the prediction times is specified as a vector of multiple times. 
+
+Note that the following code will take a substantial amount of computation time (18 min on our system) due to the cross-validation and optimization of the hyperparameters. Of the available discrete-time models, `cforest` takes the longest to run and so has been excluded from the current list of models to reduce computation time. The optimization cannot be skipped in the current specification, but computation time can be reduced by reducing the number of times the Bayesian Optimization is repeated (`iter`). The printout indicates the steps in the optimization, which can be silenced (`verbose.opt=FALSE`).
+
+```{r pbc_Fit, cache=TRUE}
+start <- Sys.time()
+pbc.results <- autoSurv(timeVar = "survTime", 
+                        statusVar = "statusComp", 
+                        data = pbc.dat, 
+                        times =  c(3),
+                        trainModels = c("cox","rsf","glm","glmnet","gbm","svm","nnet"), #cforest
+                        bins.upper = 25,
+                        cens = "half",
+                        testProp = 0.2, 
+                        seed = 1101,
+                        cv = TRUE,
+                        cvFold = 5,
+                        verbose.opt = FALSE
+)
+time.pbc <- Sys.time()-start
 ```
 
-# View AUC Performance
+## View tuned hyperparameters for fitted models
 
-```{r}
-## do paired model/times
+We can view the tuned hyperparameters from the Bayesian optimization for each of the models. We can see the optimal number of intervals selected by tuning for each of the discrete-time models. 
 
-results$auc
+```{r pbc_Hyperparam, cache=TRUE}
+pbc.results$tuned_params
 ```
 
-# View Brier Score Performance
+## Assess predictive performance
 
-```{r}
-results$brier
+For the tuned models, we examine the predictive performance in the test data set using the following time-dependent metrics that account for right-censoring:
+* AUC (`$auc`): Ranges from 0 to 1, where values closer to 1 indicate better discrimination, and 0.5 indicates discriminative ability similar to chance 
+* Brier Score (`Brier` column in `$brier`): Similar to mean squared error, where values closer to 0 indicate better overall predictive performance. The "Null model" indicates the performance of a model with no covariates and can be used as a benchmark for assessing the performance of the other models. 
+* R-squared (`R2` column in `$brier`): Scaled Brier score computed as (Model Brier score)/(Null model Brier score), where values closer to 1 indicate better overall predictive performance. 
+* Integrated Brier score (`IBS` column in `$brier`): Integrates the Brier score over the prediction times (`times`) specified in `autoSurv`. Will be 0 if there is only one prediction time specified. 
+
+A data set of all performance metrics can also be obtained (`$metrics`). 
+
+```{r pbc_Metrics, cache=TRUE}
+pbc.results$auc
+
+pbc.results$brier
+
+pbc.results$metrics
+
+#sort results by decreasing R2 
+pbc.results$metrics[order(pbc.results$metrics$R2, decreasing=TRUE),]
 ```
 
-# View model
+## Plot predictions for an individual 
 
-```{r}
-results$models$bestRF
+We can obtain the predicted probabilities from a particular individual using the `Score_newdata()` function, and extract the predicted survival probabilities for any of the models that were fit. 
+
+```{r pbc_NewPred, cache=TRUE}
+times_pred <- seq(0,3,by=0.01)
+pbc.testResults.id <- Score_newdata(pbc.results, newdata=pbc.dat[4,], times=times_pred, timeVar="survTime", statusVar="statusComp")
+
+pred_probs <- pbc.testResults.id$pred_probabilities
+mods <- names(pred_probs)
+pred_probs_mat <- data.frame("model"=rep(mods, each=length(times_pred)),
+                             "times"=rep(times_pred, length(mods)),
+                             "probs"=unlist(pred_probs))
+
+pbc.testid <- ggplot(data = subset(pred_probs_mat ,model%in%c("cox","rsf","glm","nnet")), aes(y = probs, x = times, color = model)) +
+  geom_step(size=0.8) +
+  theme_light() + theme(text=element_text(size=15)) + xlab("Prediction times") +
+  xlab("Prediction times") + xlim(0,3) + 
+  ylab("Predicted survival probability") +
+  guides(color=guide_legend(title=""))
+pbc.testid
 ```
+
+# Example 2 - Colon cancer 
+
+In this example, we demonstrate the performance of discrete-time survival models using the `colon` data set from the `survival` package. We begin by formatting the data set for use in the analysis.
+
+We use a 60/20/20 training/validation/test split sample, where 60% of the data is used to train the data set, 20% is used as an internal validation data set to tune the hyperparameters, and 20% is used as a test data set. We can specify the 60/20 split within the `autoSurv()` function, but we must first identify the 20% sample for the test data set. 
+
+```{r colon_Prep, cache=TRUE}
+set.seed(1101)
+data(colon, package="survival")
+colon$survTime <- colon$time/365.25
+colon <- subset(colon, etype==2)
+colon.dat <- subset(colon, select=-c(id,study,etype,time))
+colon.dat <- colon.dat[complete.cases(colon.dat),]
+
+#Standardize covariates
+colon.dat_covs <- subset(colon.dat, select = -c(status,survTime))
+colon.dat_covs_process <- caret::preProcess(colon.dat_covs, method=c("center", "scale"))
+colon.dat_covs <- predict(colon.dat_covs_process, colon.dat_covs)
+colon.dat <- cbind(colon.dat[,c("survTime","status")], colon.dat_covs)
+
+#Select a 20% data set as an external test set 
+colon.dat_val.ids <- sample(1:nrow(colon.dat), size=nrow(colon.dat)*0.2, replace=FALSE) 
+colon.dat_train <- colon.dat[-colon.dat_val.ids, ]
+colon.dat_val <- colon.dat[colon.dat_val.ids, ]
+```
+
+The resulting data set has `r nrow(colon.dat)` individuals, with a median follow-up time of 6.4 years and a censoring rate of `r round(mean(1-colon.dat$status)*100)`%. 
+
+## Fit survival models to Colon cancer data
+
+The `colon.dat` data set contains the survival time (labeled `survTime`), an event indicator (labeled `status`), and 17 predictors.
+
+We use a 60/20/20 training/validation/test split. Since we have already identified the 20% for the test data set, to select 20% of the original data set for the validation data set we specify the proportion as `testProp=0.2/(1-0.2)`. We don't use cross-validation in this example (`cv=FALSE`). Thus, tuning of the hyperparameters is done by optimizing performance in the test data set. 
+
+We specify the prediction times of interest as the sequence of times 1, 2, 3, 4, 5 years (`times=c(1,2,3,4,5)`). We consider a maximum of 25 intervals (`bins.upper=25`) for creating the discrete-time data set. The optimal number of intervals will be tuned using Bayesian optimization to minimize the integrated Brier score across the specified times in the test data set. We specify that censored observations should be treated as being censored in an interval if their survival time is observed to be at least half way through the interval  (`cens="half"`).
+
+The specification of the seed (`seed=1101`) allows for these results to be reproduced. We silence the printout for the Bayesian optimization (`verbose.opt=FALSE`). We use default specifications for the other parameters. The following code takes less computational time than above where cross-validation was used. 
+
+```{r colon_Fit, cache=TRUE}
+colon.results <- autoSurv(timeVar = "survTime", 
+                          statusVar = "status", 
+                          data = colon.dat_train, 
+                          times =  c(1,2,3,4,5),
+                          trainModels = c("cox","rsf","glm","glmnet","gbm","svm","nnet"), #cforest
+                          bins.upper = 25,
+                          testProp = 0.2/(1-0.2), #since we have removed 20% for the test data set
+                          seed = 1101,
+                          cv = FALSE,
+                          verbose.opt = FALSE
+)
+```
+
+## View tuned hyperparameters for fitted models
+
+We can view the tuned hyperparameters from the Bayesian optimization for each of the models. We can see the optimal number of intervals selected by tuning for each of the discrete-time models. 
+
+```{r colon_Hyperparam, cache=TRUE}
+colon.results$tuned_params
+```
+
+## Assess predictive performance in a new data set
+
+We fit the trained prediction models to a new data set using the `Score_newdata()` function. We specify that the models should be evaluated on the validation data set (`colon.dat_val`) at the time points 1, 2, 3, 4, 5 years (`times=1:5`). We specify the column in the data set for survival time (`timeVar="survTime"`) and event status (`statusVar="status"`) to evaluate the predictive performance of the data set. 
+
+```{r colon_New, cache=TRUE}
+colon.testResults <- Score_newdata(colon.results, newdata=colon.dat_val, times=1:5, timeVar="survTime", statusVar="status")
+```
+
+## Plot of prediction metrics
+
+We can plot the prediction metrics over the specified times. 
+
+```{r colon_Metrics, cache=TRUE}
+ggplot(data = colon.testResults$auc, aes(y = AUC,x = times, color = model)) +
+  geom_point(size=2) +
+  geom_line(size=0.8) +
+  theme_light() + theme(text=element_text(size=15)) + xlab("Prediction times") +
+  guides(color=guide_legend(title=""))
+
+ggplot(data = colon.testResults$brier, aes(y = Brier, x = times, color = model)) +
+  geom_point(size=2) +
+  geom_line(size=0.8) +
+  theme_light() + theme(text=element_text(size=15)) + xlab("Prediction times") +
+  guides(color=guide_legend(title=""))
+```
+
+
