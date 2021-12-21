@@ -1,6 +1,6 @@
 ---
 title: "Building Discrete-time Survival Prediction Models: autoSurv"
-author: "Krithika Suresh, Cameron Severn, Debashis Ghosh"
+author: "Krithika Suresh, Cameron Severn"
 date: "Dec 20, 2021"
 output: rmarkdown::html_vignette
 vignette: >
@@ -12,8 +12,6 @@ vignette: >
 ```{r, include = FALSE}
 library(formatR)
 knitr::opts_chunk$set(
-  tidy.opts = list(width.cutoff = 60), 
-  tidy = TRUE,
   collapse = TRUE,
   comment = "#>"
 )
@@ -21,7 +19,7 @@ knitr::opts_chunk$set(
 options(rmarkdown.html_vignette.check_title = FALSE)
 ```
 
-```{r setup, warning=FALSE}
+```{r setup, message=FALSE}
 library(devtools)
 install_github("ksuresh17/autoSurv")
 library(autoSurv)
@@ -30,7 +28,7 @@ library(ggplot2)
 
 # Introduction 
 
-Here, we describe the `autoSurv()` function developed to train and evaluate the performance of survival prediction models applied to time-to-event data. Currently, the function implements the continuous-time models Cox proportional hazards and random survival forests, and various classification models (logistic regression, elastic net, support vector machines, gradient boosting machines, neural network) in a discrete-time framework. This function implements the following steps: 
+Here, we describe the `autoSurv()` function developed to train and evaluate the performance of survival prediction models applied to time-to-event data. Currently, the function implements the continuous-time models Cox proportional hazards and random survival forests, and various classification models (logistic regression, elastic net, support vector machines, gradient boosting machines, neural network) in a discrete-time framework. This function performs the following steps: 
 
 * Model training: The training/test data split can be specified within the function. The training data set is used to build the models and to tune the hyperparameters. Additionally, the user can specify whether cross-validation in the training set should be used for hyperparameter tuning. 
 * Hyperparameter tuning: Machine learning algorithms often utilize hyperparameters in the model training process that must be tuned to identify the optimal values that will optimize predictive performance. Additionally, for the discrete-time models we tune the number of intervals used to create the person-time data set. Hyperparameter tuning is performed using Bayesian optimization. In the current function implementation, this step cannot be skipped with the aim that users can take advantage of the automated nature of this function to perform tuning. 
@@ -108,21 +106,21 @@ We specify the prediction time of interest as 3 years (`times=3`). We consider a
 
 The specification of the seed (`seed=1101`) allows for these results to be reproduced. 
 
-The following models are fit (`trainModels`): 
+The following models are available (`trainModels`): 
 
 * Continuous-time: Cox proportional hazards (`cox`) and Random survival forest (`rsf`)
-* Discrete-time models: logistic regression (`glm`), elastic net (`glmnet`), gradient boosting machines (`gbm`), support vector machines (`svm`), and neural networks (`nnet`)
+* Discrete-time models: logistic regression (`glm`), elastic net (`glmnet`), gradient boosting machines (`gbm`), support vector machines (`svm`), conditional inference forest (`cforest`), and neural networks (`nnet`)
 
 Some of these models require hyperparameters that are also tuned using Bayesian optimization. We use the default values for parameters related to the specifications of the Bayesian optimization search scheme (`init=10`, `iter=20`). Tuning is performed by minimizing the Brier score of the maximum of the prediction times specified (`times`) or by minimizing the integrated Brier score when the prediction times is specified as a vector of multiple times. 
 
-Note that the following code will take a substantial amount of computation time (18 min on our system) due to the cross-validation and optimization of the hyperparameters. Of the available discrete-time models, `cforest` takes the longest to run and so has been excluded from the current list of models to reduce computation time. The optimization cannot be skipped in the current specification, but computation time can be reduced by reducing the number of times the Bayesian Optimization is repeated (`iter`). The printout indicates the steps in the optimization, which can be silenced (`verbose.opt=FALSE`).
+Note that the following code will take a substantial amount of computation time due to the cross-validation and optimization of the hyperparameters. Of the available discrete-time models, `cforest` takes the longest to run. We have included only two continuous-time and two discrete-time models in the current list of models to reduce computation time. The optimization cannot be skipped in the current specification, but computation time can be reduced by limiting the number of times the Bayesian Optimization is repeated (`iter`). The printout indicates the steps in the optimization, which can be silenced (`verbose.opt=FALSE`).
 
 ```{r pbc_Fit, cache=TRUE}
 pbc.results <- autoSurv(timeVar = "survTime", 
                         statusVar = "statusComp", 
                         data = pbc.dat, 
                         times =  c(3),
-                        trainModels = c("cox","rsf","glm","glmnet","gbm","svm","nnet"), #cforest
+                        trainModels = c("cox","rsf","glm","nnet"),
                         bins.upper = 25,
                         cens = "half",
                         testProp = 0.2, 
@@ -183,8 +181,7 @@ pred_probs_mat <- data.frame("model"=rep(mods, each=length(times_pred)),
 ```
 
 ```{r pbc_NewPredFig, fig.width=6, fig.height=4}
-pbc.testid <- ggplot(data = subset(pred_probs_mat, model%in%c("cox","rsf","glm","nnet")), 
-                     aes(y = probs, x = times, color = model)) +
+pbc.testid <- ggplot(data = pred_probs_mat, aes(y = probs, x = times, color = model)) +
   geom_step(size=0.8) +
   theme_light() + theme(text=element_text(size=15)) + xlab("Prediction times") +
   xlab("Prediction times") + xlim(0,3) + 
@@ -236,7 +233,7 @@ colon.results <- autoSurv(timeVar = "survTime",
                           statusVar = "status", 
                           data = colon.dat_train, 
                           times =  c(1,2,3,4,5),
-                          trainModels = c("cox","rsf","glm","glmnet","gbm","svm","nnet"), #cforest
+                          trainModels = c("cox","rsf","glm","gbm"), 
                           bins.upper = 25,
                           testProp = 0.2/(1-0.2), #since we have removed 20% for the test data set
                           seed = 1101,

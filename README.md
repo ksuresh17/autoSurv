@@ -12,7 +12,9 @@ library(autoSurv)
 ```
 
 ## Introduction 
-`autoSurv` can be used to train and evaluate the performance of survival prediction models applied to time-to-event data. Currently, the function implements the continuous-time models Cox proportional hazards and random survival forests, and various classification models (logistic regression, elastic net, support vector machines, gradient boosting machines, neural network) in a discrete-time framework. The existing functions implement the following steps: 
+`autoSurv` can be used to train and evaluate the performance of survival prediction models applied to time-to-event data. Currently, the function implements the continuous-time models Cox proportional hazards and random survival forests, and various classification models (logistic regression, elastic net, support vector machines, gradient boosting machines, neural network) in a discrete-time framework. 
+
+The existing functions perform the following steps: 
 
 * Model training: The training/test data split can be specified within the function. The training data set is used to build the models and to tune the hyperparameters. Additionally, the user can specify whether cross-validation in the training set should be used for hyperparameter tuning. 
 * Hyperparameter tuning: Machine learning algorithms often utilize hyperparameters in the model training process that must be tuned to identify the optimal values that will optimize predictive performance. Additionally, for the discrete-time models we tune the number of intervals used to create the person-time data set. Hyperparameter tuning is performed using Bayesian optimization. In the current function implementation, this step cannot be skipped with the aim that users can take advantage of the automated nature of this function to perform tuning. 
