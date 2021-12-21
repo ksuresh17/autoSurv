@@ -1,6 +1,6 @@
-#' Discrete-time survival prediction models 
-#' 
-#' @description 
+#' Discrete-time survival prediction models
+#'
+#' @description
 #' Build discrete-time survival prediction models using machine learning classification algorithms and assess their predictive performance.
 #'
 #' @section Authors:
@@ -22,6 +22,7 @@
 #' @param verbose.opt enable or disable printing of the Bayesian optimization progress
 #'
 #' @return A list with predicted survival probabilities, performance metrics, and trained models
+#' @export
 
 autoSurv <- function(timeVar,
                      statusVar,

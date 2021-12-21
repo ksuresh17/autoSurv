@@ -2,7 +2,7 @@
 % Please edit documentation in R/autoSurv.R
 \name{autoSurv}
 \alias{autoSurv}
-\title{autoSurv}
+\title{Discrete-time survival prediction models}
 \usage{
 autoSurv(
   timeVar,
@@ -10,31 +10,34 @@ autoSurv(
   data,
   times = NULL,
   trainModels = c("cox", "rsf", "glm", "gbm", "glmnet", "svm", "cforest", "nnet"),
-  bins = 10,
+  bins.lower = 5,
+  bins.upper = 10,
+  cens = "same",
   testProp = 0.2,
   seed = 1,
   init = 10,
   iter = 20,
   cv = TRUE,
-  cvFold = 5
+  cvFold = 5,
+  verbose.opt = TRUE
 )
 }
 \arguments{
-\item{timeVar}{string corresponding to the variable name of the time-to-event}
+\item{timeVar}{string corresponding to the variable name of the time-to-event outcome}
 
 \item{statusVar}{string corresponding to the variable name of the status indicator}
 
 \item{data}{data frame containing covariates for prediction}
 
-\item{times}{vector of time points at which probably of event is predicted}
+\item{times}{vector of time points at which survival probability is predicted}
 
 \item{trainModels}{list of models to train. options: "cox","rsf","glm","gam","gbm","glmnet","svm","cforest","nnet"}
 
-\item{bins}{number of time bins}
+\item{cens}{string indicating which method to use for handling censored observations. options: "same","prev","half"}
 
 \item{testProp}{proportion of observations to be randomly selected for the test set}
 
-\item{seed}{integer random seed}
+\item{seed}{integer random seed for reproducing results}
 
 \item{init}{number of randomly chosen points to sample the target function before Bayesian Optimization fitting the Gaussian Process}
 
@@ -43,10 +46,19 @@ autoSurv(
 \item{cv}{enable or disable cross-validation}
 
 \item{cvFold}{number of folds to use in k-fold cross validation}
+
+\item{verbose.opt}{enable or disable printing of the Bayesian optimization progress}
+
+\item{bins}{number of time bins}
 }
 \value{
-
+A list with predicted survival probabilities, performance metrics, and trained models
 }
 \description{
-autoSurv
+Build discrete-time survival prediction models using machine learning classification algorithms and assess their predictive performance.
 }
+\section{Authors}{
+
+Krithika Suresh (\email{krihtika.suresh@cuanschutz.edu})
+}
+

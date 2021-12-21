@@ -13,6 +13,7 @@
 #' @param statusVar string corresponding to the variable name of the status indicator. Used to compute performance metrics
 #'
 #' @return A list with predicted probabilities and performance metrics
+#' @export
 
 predict_autoSurv <- function(object, newdata, times, timeVar, statusVar) {
     # create survival formula for censoring
