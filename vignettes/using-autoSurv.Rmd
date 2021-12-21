@@ -10,7 +10,6 @@ vignette: >
 ---
 
 ```{r, include = FALSE}
-library(formatR)
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>"
@@ -49,9 +48,9 @@ The `autoSurv()` function requires the following parameters:
 
 * `data`: dataframe containing timeVar, statusVar, idVar, and other variables to be used in time-to-event prediction.
 
-* `times`: optional list of time horizon(s) of interest. If not specified, will be taken as the median of the event times. If specified as a single value, hyperparameter tuning optimizes predictive accuracy using Brier score at the specified time. If specified as a vector, hyperparameter tuning optimizes predictive accuracy using Integrated Brier score over the specified times. 
+* `times`: optional list of time horizon(s) of interest. If not specified, will be taken as the median of the event times. If specified as a single value, hyperparameter tuning optimizes predictive accuracy using Brier score at the specified time. If specified as a vector, hyperparameter tuning optimizes predictive accuracy using Integrated Brier score over the specified times. Hyperparameter  prediction models will optimize predictive accuracy of the test data at these times. 
 
-Hyperparameter  prediction models will optimize predictive accuracy of the test data at these times. 
+* `trainModels`: vector of models to train. Current options are continuous-time models: "cox","rsf", discrete-time models: "glm","gam","gbm","glmnet","svm","cforest","nnet"
 
 * `bins.lower`: minimum number of discrete-time intervals used to build the discrete-time data set. Default is 5. 
 
@@ -113,7 +112,7 @@ The following models are available (`trainModels`):
 
 Some of these models require hyperparameters that are also tuned using Bayesian optimization. We use the default values for parameters related to the specifications of the Bayesian optimization search scheme (`init=10`, `iter=20`). Tuning is performed by minimizing the Brier score of the maximum of the prediction times specified (`times`) or by minimizing the integrated Brier score when the prediction times is specified as a vector of multiple times. 
 
-Note that the following code will take a substantial amount of computation time due to the cross-validation and optimization of the hyperparameters. Of the available discrete-time models, `cforest` takes the longest to run. We have included only two continuous-time and two discrete-time models in the current list of models to reduce computation time. The optimization cannot be skipped in the current specification, but computation time can be reduced by limiting the number of times the Bayesian Optimization is repeated (`iter`). The printout indicates the steps in the optimization, which can be silenced (`verbose.opt=FALSE`).
+Note that the following code will take a substantial amount of computation time due to the cross-validation and optimization of the hyperparameters. Of the available discrete-time models, `cforest` takes the longest to run. We have included only two continuous-time and two discrete-time models in the vector of models (`trainModels`) to reduce computation time. The optimization cannot be skipped in the current specification, but computation time can be reduced by limiting the number of times the Bayesian Optimization is repeated (`iter`). The printout indicates the steps in the optimization, which can be silenced (`verbose.opt=FALSE`).
 
 ```{r pbc_Fit, cache=TRUE}
 pbc.results <- autoSurv(timeVar = "survTime", 
@@ -224,7 +223,7 @@ The `colon.dat` data set contains the survival time (labeled `survTime`), an eve
 
 We use a 60/20/20 training/validation/test split. Since we have already identified the 20% for the test data set, to select 20% of the original data set for the validation data set we specify the proportion as `testProp=0.2/(1-0.2)`. We don't use cross-validation in this example (`cv=FALSE`). Thus, tuning of the hyperparameters is done by optimizing performance in the test data set. 
 
-We specify the prediction times of interest as the sequence of times 1, 2, 3, 4, 5 years (`times=c(1,2,3,4,5)`). We consider a maximum of 25 intervals (`bins.upper=25`) for creating the discrete-time data set. The optimal number of intervals will be tuned using Bayesian optimization to minimize the integrated Brier score across the specified times in the test data set. We specify that censored observations should be treated as being censored in an interval if their survival time is observed to be at least half way through the interval  (`cens="half"`).
+We specify the prediction times of interest as the sequence of times 1, 2, 3, 4, 5 years (`times=c(1,2,3,4,5)`). We have included only two continuous-time and two discrete-time models in the vector of models (`trainModels`) to reduce computation time. We consider a maximum of 25 intervals (`bins.upper=25`) for creating the discrete-time data set. The optimal number of intervals will be tuned using Bayesian optimization to minimize the integrated Brier score across the specified times in the test data set. We specify that censored observations should be treated as being censored in an interval if their survival time is observed to be at least half way through the interval  (`cens="half"`).
 
 The specification of the seed (`seed=1101`) allows for these results to be reproduced. We silence the printout for the Bayesian optimization (`verbose.opt=FALSE`). We use default specifications for the other parameters. The following code takes less computational time than above where cross-validation was used. 
 

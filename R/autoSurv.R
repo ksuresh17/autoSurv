@@ -10,7 +10,7 @@
 #' @param statusVar string corresponding to the variable name of the status indicator
 #' @param data data frame containing covariates for prediction
 #' @param times vector of time points at which survival probability is predicted
-#' @param trainModels list of models to train. options: "cox","rsf","glm","gam","gbm","glmnet","svm","cforest","nnet"
+#' @param trainModels vector of models to train. options: "cox","rsf","glm","gam","gbm","glmnet","svm","cforest","nnet"
 #' @param bins number of time bins
 #' @param cens string indicating which method to use for handling censored observations. options: "same","prev","half"
 #' @param testProp proportion of observations to be randomly selected for the test set
