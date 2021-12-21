@@ -1,21 +1,15 @@
-### TODO ###
-# Extract models from discrete time. may need to rework how function works
-# figure out why intervals > 10 have issues. Krithika looking at this.
-# fix id, fold names to be unique
-# fix results table to be presentable
-# fix warning messages during training
-# add neural net and SVM
-# diagnose issues with glmnet poor performance.
-# add hyperparameter tuning for other discrete time model, gbm is done
-# maybe add cross validation
-# clean code for presentation on github
-
-#' autoSurv
+#' Discrete-time survival prediction models 
+#' 
+#' @description 
+#' Build discrete-time survival prediction models using machine learning classification algorithms and assess their predictive performance.
+#'
+#' @section Authors:
+#' Krithika Suresh (\email{krihtika.suresh@@cuanschutz.edu})
 #'
 #' @param timeVar string corresponding to the variable name of the time-to-event outcome
 #' @param statusVar string corresponding to the variable name of the status indicator
 #' @param data data frame containing covariates for prediction
-#' @param times vector of time points at which probably of event is predicted
+#' @param times vector of time points at which survival probability is predicted
 #' @param trainModels list of models to train. options: "cox","rsf","glm","gam","gbm","glmnet","svm","cforest","nnet"
 #' @param bins number of time bins
 #' @param cens string indicating which method to use for handling censored observations. options: "same","prev","half"
@@ -27,10 +21,8 @@
 #' @param cvFold number of folds to use in k-fold cross validation
 #' @param verbose.opt enable or disable printing of the Bayesian optimization progress
 #'
-#' @return
-#' @export
-#'
-#' @examples
+#' @return A list with predicted survival probabilities, performance metrics, and trained models
+
 autoSurv <- function(timeVar,
                      statusVar,
                      data,
@@ -678,99 +670,6 @@ autoSurv <- function(timeVar,
          "tuned_params" = optParams
     )
 }
-
-# Function that computes survival predictions for a new data set ----------
-Score_newdata <- function(object, newdata, times, timeVar, statusVar) {
-    # create survival formula for censoring
-    .form_cens <- as.formula(paste("Surv(", timeVar,",", statusVar, ") ~ 1"))
-    #list of models that were fit to the original data
-    trainModels <- names(object$models)
-    #store predictions for assessment
-    preds <- list()
-
-    if("cox" %in% trainModels) {
-        preds_cox <-  matrix(NA, nrow(newdata), length(times))
-        for (i in 1:length(times)){
-            preds_cox[,i] <- predictCox(object$models$cox, dat=newdata, w=times[i])
-        }
-        preds[["cox"]] <- preds_cox
-    }
-
-    if("rsf" %in% trainModels) {
-        preds_rsf <-  matrix(NA, nrow(newdata), length(times))
-        for (i in 1:length(times)){
-            preds_rsf[,i] <- predictRSF(object$models$rsf, newdata=newdata, times=times[i])
-        }
-        preds[["rsf"]] <- preds_rsf
-    }
-
-    if ("glm" %in% trainModels){
-        preds_glm <- predBinSurv(testDat = newdata, delta.upper = object$models$glm[["delta.upper"]],
-                                 model = object$models$glm[["model"]], times)
-        preds[["glm"]] <- preds_glm
-    }
-
-    if ("gbm" %in% trainModels){
-        preds_gbm <- predBinSurv(testDat = newdata, delta.upper = object$models$gbm[["delta.upper"]],
-                                 model = object$models$gbm[["model"]], times)
-        preds[["gbm"]] <- preds_gbm
-    }
-
-    if ("gam" %in% trainModels){
-        preds_gam <- predBinSurv(testDat = newdata, delta.upper = object$models$gam[["delta.upper"]],
-                                 model = object$models$gam[["model"]], times)
-        preds[["gam"]] <- preds_gam
-    }
-
-    if ("glmnet" %in% trainModels){
-        preds_glmnet <- predBinSurv(testDat = newdata, delta.upper = object$models$glmnet[["delta.upper"]],
-                                    model = object$models$glmnet[["model"]], times)
-        preds[["glmnet"]] <- preds_glmnet
-    }
-
-    if ("svm" %in% trainModels){
-        preds_svm <- predBinSurv(testDat = newdata, delta.upper = object$models$svm[["delta.upper"]],
-                                 model = object$models$svm[["model"]], times)
-        preds[["svm"]] <- preds_svm
-    }
-
-    if ("cforest" %in% trainModels){
-        preds_cforest <- predBinSurv(testDat = newdata, delta.upper = object$models$cforest[["delta.upper"]],
-                                     model = object$models$cforest[["model"]], times)
-        preds[["cforest"]] <- preds_cforest
-    }
-
-    if ("nnet" %in% trainModels){
-        preds_nnet <- predBinSurv(testDat = newdata, delta.upper = object$models$nnet[["delta.upper"]],
-                                  model = object$models$nnet[["model"]], times)
-        preds[["nnet"]] <- preds_nnet
-    }
-
-    temp_Score <- riskRegression::Score(preds,
-                                        formula=.form_cens,
-                                        data=newdata,
-                                        times=times,
-                                        summary="ibs")
-
-    scoreAUC <- temp_Score$AUC$score
-    scoreBrier <- temp_Score$Brier$score
-    scoreBrier$R2 <- 1-scoreBrier$Brier/scoreBrier$Brier[which(scoreBrier$model=="Null model")]
-    scoreBrier$R2_IBS <- 1-scoreBrier$IBS/scoreBrier$IBS[which(scoreBrier$model=="Null model")]
-
-    scoreALL <- data.frame(model = as.character(scoreAUC$model),
-                           AUC = scoreAUC$AUC,
-                           Brier = scoreBrier$Brier[-which(scoreBrier$model=="Null model")],
-                           R2 = scoreBrier$R2[-which(scoreBrier$model=="Null model")],
-                           IBS = scoreBrier$IBS[-which(scoreBrier$model=="Null model")],
-                           R2_IBS = scoreBrier$R2_IBS[-which(scoreBrier$model=="Null model")])
-
-    list("auc" = scoreAUC,
-         "brier" = scoreBrier,
-         "metrics" = scoreALL,
-         "pred_probabilities" = lapply(preds, function(x) 1-x),
-         "models" = object$models)
-}
-
 
 # Function that identifies the endpoints for the discrete intervals --------
 createDiscreteIntervals <- function(time, event, bins) {
