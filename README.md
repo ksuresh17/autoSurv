@@ -1,7 +1,7 @@
 # autoSurv: An automated Machine Learning (AutoML) tool for survival analysis
 Krithika Suresh (**maintainer**, <krithika.suresh@cuanschutz.edu>), Cameron Severn 
 
-[[Paper]] | [[Tutorial]]
+[[Paper]] | [[Tutorial](https://ksuresh17.github.io/autoSurv/)]
 
 ## Installation
 The `autoSurv` functions are available for download from Github. 
