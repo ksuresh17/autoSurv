@@ -4,7 +4,7 @@
 #' Build discrete-time survival prediction models using machine learning classification algorithms and assess their predictive performance.
 #'
 #' @section Authors:
-#' Krithika Suresh (\email{krihtika.suresh@@cuanschutz.edu})
+#' Krithika Suresh (\email{krithika.suresh@@cuanschutz.edu})
 #'
 #' @param timeVar string corresponding to the variable name of the time-to-event outcome
 #' @param statusVar string corresponding to the variable name of the status indicator
@@ -61,7 +61,8 @@ autoSurv <- function(timeVar,
     if(cv){
         if(cvFold > 1){
             set.seed(seed)
-            internal_fold <- sample(seq_len(cvFold),nrow(trainDat),1/cvFold)
+            # internal_fold <- sample(rep_len(1:cvFold, length.out=nrow(trainDat)), nrow(trainDat))
+            internal_fold <- sample(rep_len(1:cvFold, length.out=nrow(trainDat)), nrow(trainDat))
         } else{
             stop("cvFold should be a positive integer greater than 1.")
         }
@@ -100,9 +101,58 @@ autoSurv <- function(timeVar,
     saveModels <- list()
     optParams <- list()
     preds <- list()
+    cvResults <- list()
+    cvMetrics <- list()
 
     # cox model
     if ("cox" %in% trainModels){
+
+        cox_cv <- function(){
+            fold_briers <- NULL
+            scoreCV <- NULL
+            for (i in seq_len(cvFold)){
+                if(cv){
+                    fold_test <- trainDat[internal_fold == i,]
+                    fold_train <- trainDat[internal_fold != i,]
+                }
+
+                coxphModel <- survival::coxph(.form,
+                                              data=fold_train, x=TRUE)
+                brier <- NULL
+                temp_Score <- riskRegression::Score(list("Cox" = coxphModel),
+                                                    formula=.form_cens,
+                                                    data=fold_test,
+                                                    times=times,
+                                                    summary="ibs")
+                if(length(times)>1) {
+                    brier <- tail(temp_Score$Brier$score$IBS[temp_Score$Brier$score$model == "RSF"], 1)
+                } else {
+                    brier <- temp_Score$Brier$score$Brier[temp_Score$Brier$score$model == "RSF"]
+                }
+
+                fold_briers <- c(fold_briers, brier)
+
+                scoreAUC <- temp_Score$AUC$score
+                scoreBrier <- temp_Score$Brier$score
+                scoreBrier$R2 <- 1-scoreBrier$Brier/scoreBrier$Brier[which(scoreBrier$model=="Null model")]
+                scoreBrier$R2_IBS <- 1-scoreBrier$IBS/scoreBrier$IBS[which(scoreBrier$model=="Null model")]
+
+                scoreCV[[i]] <- data.frame(
+                    AUC = scoreAUC$AUC,
+                    Brier = scoreBrier$Brier[-which(scoreBrier$model=="Null model")],
+                    R2 = scoreBrier$R2[-which(scoreBrier$model=="Null model")],
+                    IBS = scoreBrier$IBS[-which(scoreBrier$model=="Null model")],
+                    R2_IBS = scoreBrier$R2_IBS[-which(scoreBrier$model=="Null model")])
+            }
+
+            neg_brier <- -mean(fold_briers)
+
+            list(Score = neg_brier,
+                 Pred = scoreCV)
+        }
+
+        OPT_Res_cox <- cox_cv()
+
         coxphModel <- survival::coxph(.form,
                                       data=trainDat)
 
@@ -112,6 +162,8 @@ autoSurv <- function(timeVar,
         }
         preds[["cox"]] <- pred_cox
         saveModels$cox <- coxphModel
+        cvResults$cox <- OPT_Res_cox$Pred
+        cvMetrics$cox <- Reduce("+", cvResults$cox) / length(cvResults$cox)
     }
 
     # Random Survival Forests
@@ -119,6 +171,7 @@ autoSurv <- function(timeVar,
 
         rf_cv <- function(nodesize, mtry){
             fold_briers <- NULL
+            scoreCV <- NULL
             for (i in seq_len(cvFold)){
                 if(cv){
                     fold_test <- trainDat[internal_fold == i,]
@@ -143,12 +196,24 @@ autoSurv <- function(timeVar,
                 }
 
                 fold_briers <- c(fold_briers, brier)
+
+                scoreAUC <- temp_Score$AUC$score
+                scoreBrier <- temp_Score$Brier$score
+                scoreBrier$R2 <- 1-scoreBrier$Brier/scoreBrier$Brier[which(scoreBrier$model=="Null model")]
+                scoreBrier$R2_IBS <- 1-scoreBrier$IBS/scoreBrier$IBS[which(scoreBrier$model=="Null model")]
+
+                scoreCV[[i]] <- data.frame(
+                    AUC = scoreAUC$AUC,
+                    Brier = scoreBrier$Brier[-which(scoreBrier$model=="Null model")],
+                    R2 = scoreBrier$R2[-which(scoreBrier$model=="Null model")],
+                    IBS = scoreBrier$IBS[-which(scoreBrier$model=="Null model")],
+                    R2_IBS = scoreBrier$R2_IBS[-which(scoreBrier$model=="Null model")])
             }
 
             neg_brier <- -mean(fold_briers)
 
             list(Score = neg_brier,
-                 Pred = 0)
+                 Pred = scoreCV)
         }
 
         print("Optimizing RSF")
@@ -176,6 +241,8 @@ autoSurv <- function(timeVar,
         preds[["rsf"]] <- pred_rsf
         saveModels$rsf <- rfsrcModel
         optParams$rsf <- OPT_Res$Best_Par
+        cvResults$rsf <- OPT_Res$Pred[[head(which(OPT_Res$History$Value==OPT_Res$Best_Value),1)]]
+        cvMetrics$rsf <- Reduce("+", cvResults$rsf) / length(cvResults$rsf)
     }
 
     #Discrete time models
@@ -184,6 +251,7 @@ autoSurv <- function(timeVar,
     if ("glm" %in% trainModels){
         glm_cv <- function(intervals){
             fold_briers <- NULL
+            scoreCV <- NULL
             for (i in seq_len(cvFold)){
                 if(cv){
                     fold_test <- trainDat[internal_fold == i,]
@@ -214,12 +282,24 @@ autoSurv <- function(timeVar,
                     brier <- temp_Score$Brier$score$Brier[temp_Score$Brier$score$model == "GLM"]
                 }
                 fold_briers <- c(fold_briers, brier)
+
+                scoreAUC <- temp_Score$AUC$score
+                scoreBrier <- temp_Score$Brier$score
+                scoreBrier$R2 <- 1-scoreBrier$Brier/scoreBrier$Brier[which(scoreBrier$model=="Null model")]
+                scoreBrier$R2_IBS <- 1-scoreBrier$IBS/scoreBrier$IBS[which(scoreBrier$model=="Null model")]
+
+                scoreCV[[i]] <- data.frame(
+                    AUC = scoreAUC$AUC,
+                    Brier = scoreBrier$Brier[-which(scoreBrier$model=="Null model")],
+                    R2 = scoreBrier$R2[-which(scoreBrier$model=="Null model")],
+                    IBS = scoreBrier$IBS[-which(scoreBrier$model=="Null model")],
+                    R2_IBS = scoreBrier$R2_IBS[-which(scoreBrier$model=="Null model")])
             }
 
             neg_brier <- -mean(fold_briers)
 
             list(Score = neg_brier,
-                 Pred = 0)
+                 Pred = scoreCV)
         }
 
         print("Optimizing DiscreteTime-GLM")
@@ -249,12 +329,15 @@ autoSurv <- function(timeVar,
         preds[["glm"]] <- preds_GLM
         saveModels$glm <- OPT_pred.GLM
         optParams$glm <- OPT_Res_GLM$Best_Par
+        cvResults$glm <- OPT_Res_GLM$Pred[[head(which(OPT_Res_GLM$History$Value==OPT_Res_GLM$Best_Value),1)]]
+        cvMetrics$glm <- Reduce("+", cvResults$glm) / length(cvResults$glm)
     }
 
     # GBM discrete time model
     if ("gbm" %in% trainModels){
         gbm_cv <- function(intervals, n.trees, interaction.depth, shrinkage, n.minobsinnode){
             fold_briers <- NULL
+            scoreCV <- NULL
             for (i in seq_len(cvFold)){
                 if(cv){
                     fold_test <- trainDat[internal_fold == i,]
@@ -291,12 +374,24 @@ autoSurv <- function(timeVar,
                 }
 
                 fold_briers <- c(fold_briers, brier)
+
+                scoreAUC <- temp_Score$AUC$score
+                scoreBrier <- temp_Score$Brier$score
+                scoreBrier$R2 <- 1-scoreBrier$Brier/scoreBrier$Brier[which(scoreBrier$model=="Null model")]
+                scoreBrier$R2_IBS <- 1-scoreBrier$IBS/scoreBrier$IBS[which(scoreBrier$model=="Null model")]
+
+                scoreCV[[i]] <- data.frame(
+                    AUC = scoreAUC$AUC,
+                    Brier = scoreBrier$Brier[-which(scoreBrier$model=="Null model")],
+                    R2 = scoreBrier$R2[-which(scoreBrier$model=="Null model")],
+                    IBS = scoreBrier$IBS[-which(scoreBrier$model=="Null model")],
+                    R2_IBS = scoreBrier$R2_IBS[-which(scoreBrier$model=="Null model")])
             }
 
             neg_brier <- -mean(fold_briers)
 
             list(Score = neg_brier,
-                 Pred = 0)
+                 Pred = scoreCV)
         }
 
         print("Optimizing DiscreteTime-GBM")
@@ -334,12 +429,16 @@ autoSurv <- function(timeVar,
         preds[["gbm"]] <- preds_GBM
         saveModels$gbm <- OPT_pred.GBM
         optParams$gbm <- OPT_Res_GBM$Best_Par
+        cvResults$gbm <- OPT_Res_GBM$Pred[[head(which(OPT_Res_GBM$History$Value==OPT_Res_GBM$Best_Value),1)]]
+        cvMetrics$gbm <- Reduce("+", cvResults$gbm) / length(cvResults$gbm)
     }
 
     # glmnet discrete time model
     if ("glmnet" %in% trainModels){
         glmnet_cv <- function(intervals, alpha, lambda){
             fold_briers <- NULL
+            scoreCV <- NULL
+
             for (i in seq_len(cvFold)){
                 if(cv){
                     fold_test <- trainDat[internal_fold == i,]
@@ -372,12 +471,24 @@ autoSurv <- function(timeVar,
                     brier <- temp_Score$Brier$score$Brier[temp_Score$Brier$score$model == "glmnet"]
                 }
                 fold_briers <- c(fold_briers, brier)
+
+                scoreAUC <- temp_Score$AUC$score
+                scoreBrier <- temp_Score$Brier$score
+                scoreBrier$R2 <- 1-scoreBrier$Brier/scoreBrier$Brier[which(scoreBrier$model=="Null model")]
+                scoreBrier$R2_IBS <- 1-scoreBrier$IBS/scoreBrier$IBS[which(scoreBrier$model=="Null model")]
+
+                scoreCV[[i]] <- data.frame(
+                    AUC = scoreAUC$AUC,
+                    Brier = scoreBrier$Brier[-which(scoreBrier$model=="Null model")],
+                    R2 = scoreBrier$R2[-which(scoreBrier$model=="Null model")],
+                    IBS = scoreBrier$IBS[-which(scoreBrier$model=="Null model")],
+                    R2_IBS = scoreBrier$R2_IBS[-which(scoreBrier$model=="Null model")])
             }
 
             neg_brier <- -mean(fold_briers)
 
             list(Score = neg_brier,
-                 Pred = 0)
+                 Pred = scoreCV)
         }
 
         print("Optimizing DiscreteTime-glmnet")
@@ -411,12 +522,15 @@ autoSurv <- function(timeVar,
         preds[["glmnet"]] <- preds_glmnet
         saveModels$glmnet <- OPT_pred.glmnet
         optParams$glmnet <- OPT_Res_glmnet$Best_Par
+        cvResults$glmnet <- OPT_Res_glmnet$Pred[[head(which(OPT_Res_glmnet$History$Value==OPT_Res_glmnet$Best_Value),1)]]
+        cvMetrics$glmnet <- Reduce("+", cvResults$glmnet) / length(cvResults$glmnet)
     }
 
     # svm discrete time model
     if ("svm" %in% trainModels){
         svm_cv <- function(intervals, C, sigma){
             fold_briers <- NULL
+            scoreCV <- NULL
             for (i in seq_len(cvFold)){
                 if(cv){
                     fold_test <- trainDat[internal_fold == i,]
@@ -449,12 +563,24 @@ autoSurv <- function(timeVar,
                     brier <- temp_Score$Brier$score$Brier[temp_Score$Brier$score$model == "svm"]
                 }
                 fold_briers <- c(fold_briers, brier)
+
+                scoreAUC <- temp_Score$AUC$score
+                scoreBrier <- temp_Score$Brier$score
+                scoreBrier$R2 <- 1-scoreBrier$Brier/scoreBrier$Brier[which(scoreBrier$model=="Null model")]
+                scoreBrier$R2_IBS <- 1-scoreBrier$IBS/scoreBrier$IBS[which(scoreBrier$model=="Null model")]
+
+                scoreCV[[i]] <- data.frame(
+                    AUC = scoreAUC$AUC,
+                    Brier = scoreBrier$Brier[-which(scoreBrier$model=="Null model")],
+                    R2 = scoreBrier$R2[-which(scoreBrier$model=="Null model")],
+                    IBS = scoreBrier$IBS[-which(scoreBrier$model=="Null model")],
+                    R2_IBS = scoreBrier$R2_IBS[-which(scoreBrier$model=="Null model")])
             }
 
             neg_brier <- -mean(fold_briers)
 
             list(Score = neg_brier,
-                 Pred = 0)
+                 Pred = scoreCV)
         }
 
         print("Optimizing DiscreteTime-svm")
@@ -488,12 +614,15 @@ autoSurv <- function(timeVar,
         preds[["svm"]] <- preds_svm
         saveModels$svm <- OPT_pred.svm
         optParams$svm <- OPT_Res_svm$Best_Par
+        cvResults$svm <- OPT_Res_svm$Pred[[head(which(OPT_Res_svm$History$Value==OPT_Res_svm$Best_Value),1)]]
+        cvMetrics$svm <- Reduce("+", cvResults$svm) / length(cvResults$svm)
     }
 
     # cforest discrete time model
     if ("cforest" %in% trainModels){
         cforest_cv <- function(intervals, mtry){
             fold_briers <- NULL
+            scoreCV <- NULL
             for (i in seq_len(cvFold)){
                 if(cv){
                     fold_test <- trainDat[internal_fold == i,]
@@ -525,12 +654,24 @@ autoSurv <- function(timeVar,
                     brier <- temp_Score$Brier$score$Brier[temp_Score$Brier$score$model == "cforest"]
                 }
                 fold_briers <- c(fold_briers, brier)
+
+                scoreAUC <- temp_Score$AUC$score
+                scoreBrier <- temp_Score$Brier$score
+                scoreBrier$R2 <- 1-scoreBrier$Brier/scoreBrier$Brier[which(scoreBrier$model=="Null model")]
+                scoreBrier$R2_IBS <- 1-scoreBrier$IBS/scoreBrier$IBS[which(scoreBrier$model=="Null model")]
+
+                scoreCV[[i]] <- data.frame(
+                    AUC = scoreAUC$AUC,
+                    Brier = scoreBrier$Brier[-which(scoreBrier$model=="Null model")],
+                    R2 = scoreBrier$R2[-which(scoreBrier$model=="Null model")],
+                    IBS = scoreBrier$IBS[-which(scoreBrier$model=="Null model")],
+                    R2_IBS = scoreBrier$R2_IBS[-which(scoreBrier$model=="Null model")])
             }
 
             neg_brier <- -mean(fold_briers)
 
             list(Score = neg_brier,
-                 Pred = 0)
+                 Pred = scoreCV)
         }
 
         print("Optimizing DiscreteTime-cforest")
@@ -564,13 +705,16 @@ autoSurv <- function(timeVar,
         preds[["cforest"]] <- preds_cforest
         saveModels$cforest <- OPT_pred.cforest
         optParams$cforest <- OPT_Res_cforest$Best_Par
+        cvResults$cforest <- OPT_Res_cforest$Pred[[head(which(OPT_Res_cforest$History$Value==OPT_Res_cforest$Best_Value),1)]]
+        cvMetrics$cforest <- Reduce("+", cvResults$cforest) / length(cvResults$cforest)
+
     }
 
     # nnet discrete time model
     if ("nnet" %in% trainModels){
         nnet_cv <- function(intervals, size, decay){
-
             fold_briers <- NULL
+            scoreCV <- NULL
             for (i in seq_len(cvFold)){
                 if(cv){
                     fold_test <- trainDat[internal_fold == i,]
@@ -604,12 +748,24 @@ autoSurv <- function(timeVar,
                     brier <- temp_Score$Brier$score$Brier[temp_Score$Brier$score$model == "nnet"]
                 }
                 fold_briers <- c(fold_briers, brier)
+
+                scoreAUC <- temp_Score$AUC$score
+                scoreBrier <- temp_Score$Brier$score
+                scoreBrier$R2 <- 1-scoreBrier$Brier/scoreBrier$Brier[which(scoreBrier$model=="Null model")]
+                scoreBrier$R2_IBS <- 1-scoreBrier$IBS/scoreBrier$IBS[which(scoreBrier$model=="Null model")]
+
+                scoreCV[[i]] <- data.frame(
+                    AUC = scoreAUC$AUC,
+                    Brier = scoreBrier$Brier[-which(scoreBrier$model=="Null model")],
+                    R2 = scoreBrier$R2[-which(scoreBrier$model=="Null model")],
+                    IBS = scoreBrier$IBS[-which(scoreBrier$model=="Null model")],
+                    R2_IBS = scoreBrier$R2_IBS[-which(scoreBrier$model=="Null model")])
             }
 
             neg_brier <- -mean(fold_briers)
 
             list(Score = neg_brier,
-                 Pred = 0)
+                 Pred = scoreCV)
         }
 
         print("Optimizing DiscreteTime-nnet")
@@ -643,6 +799,8 @@ autoSurv <- function(timeVar,
         preds[["nnet"]] <- preds_nnet
         saveModels$nnet <- OPT_pred.nnet
         optParams$nnet <- OPT_Res_nnet$Best_Par
+        cvResults$nnet <- OPT_Res_nnet$Pred[[head(which(OPT_Res_nnet$History$Value==OPT_Res_nnet$Best_Value),1)]]
+        cvMetrics$nnet <- Reduce("+", cvResults$nnet) / length(cvResults$nnet)
     }
 
     temp_Score <- riskRegression::Score(preds,
@@ -668,7 +826,9 @@ autoSurv <- function(timeVar,
          "metrics" = scoreALL,
          "pred_probabilities" = lapply(preds, function(x) 1-x),
          "models" = saveModels,
-         "tuned_params" = optParams
+         "tuned_params" = optParams,
+         "CVresults" = cvResults,
+         "CVmetrics" = cvMetrics
     )
 }
 
