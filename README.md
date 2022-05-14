@@ -93,7 +93,7 @@ For the tuned models, we examine the predictive performance in the test data set
 * R-squared (`R2` column in `$brier`): Scaled Brier score computed as (Model Brier score)/(Null model Brier score), where values closer to 1 indicate better overall predictive performance. 
 * Integrated Brier score (`IBS` column in `$brier`): Integrates the Brier score over the prediction times (`times`) specified in `autoSurv`. Will be 0 if there is only one prediction time specified. 
 
-A data set of all performance metrics can also be obtained (`$metrics`). 
+A data set of all performance metrics from the test data set can be obtained (`$metrics`). 
 
 ```r
 pbc.results$auc
@@ -101,6 +101,14 @@ pbc.results$auc
 pbc.results$brier
 
 pbc.results$metrics
+```
+
+A data set of all the cross-validated performance metrics can also be obtained (`$CVmetrics`).
+
+```r
+pbc.results$CVmetrics 
+
+do.call("rbind", pbc.results$CVmetrics)
 ```
 
 ### `predict_autoSurv()`: Obtain predictions for an individual 
